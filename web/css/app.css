@@ -477,3 +477,9 @@ table.tabla { width: 100%; border-collapse: separate; border-spacing: 0; font-si
   .contenido { display: block; }
   @page { size: letter; margin: 14mm; }
 }
+
+/* Aviso de conexión (modo sin internet) */
+#banner-conexion { position: sticky; top: 0; z-index: 90; padding: 8px 14px; font-size: .85rem; font-weight: 600; text-align: center; }
+#banner-conexion.oculto { display: none; }
+#banner-conexion.sin-conexion { background: var(--alerta-suave); color: var(--alerta); }
+#banner-conexion.enviando { background: var(--ok-suave); color: var(--ok); }

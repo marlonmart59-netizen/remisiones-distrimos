@@ -54,8 +54,12 @@
     try {
       r = await fetch(ruta, { method: metodo, headers: cab, body });
     } catch (e) {
+      marcarSinConexion(true);
+      const m = metodo === 'POST' && RE_ENTREGA.exec(ruta);
+      if (m && modoWeb() && S.usuario) return encolarEntrega(m[1], cuerpo);
       throw new Error('No hay conexión con el servidor. Verifique que el programa del servidor esté abierto.');
     }
+    marcarSinConexion(!!r.headers.get('X-Desde-Cache'));
     if (opciones.binario) {
       if (!r.ok) throw new Error('No se pudo descargar el archivo.');
       return r.blob();
@@ -67,7 +71,123 @@
       throw new Error(datos.error || 'Su sesión expiró.');
     }
     if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+    return metodo === 'GET' && modoWeb() ? superponerPendientes(ruta, datos) : datos;
+  }
+
+  // ================================================================ modo sin internet (versión web / nube)
+  // Las consultas se guardan en el navegador (service worker) y las entregas hechas sin señal se guardan
+  // en una cola local (IndexedDB) que se envía sola cuando vuelve la conexión.
+  const RE_ENTREGA = /^\/api\/remisiones\/([^/?]+)\/entrega$/;
+  const modoWeb = () => !!(S.info && S.info.modo === 'pc');
+  S.sinConexion = false;
+  let vaciando = false;
+
+  function marcarSinConexion(v) {
+    if (S.sinConexion !== v) { S.sinConexion = v; actualizarBanner(); }
+  }
+
+  function actualizarBanner() {
+    const el = document.getElementById('banner-conexion');
+    if (!el) return;
+    const n = window.SinConexion ? window.SinConexion.cantidad() : 0;
+    const sin = S.sinConexion || !navigator.onLine;
+    const txt = n === 1 ? '1 entrega guardada' : `${n} entregas guardadas`;
+    if (!modoWeb() || (!sin && !n)) { el.className = 'oculto'; el.textContent = ''; return; }
+    el.className = sin ? 'sin-conexion' : 'enviando';
+    el.textContent = sin
+      ? `Sin conexión: trabajando sin internet${n ? ` · ${txt} en este equipo, se enviarán al volver la señal` : ''}`
+      : `Enviando ${txt}…`;
+  }
+
+  async function encolarEntrega(remisionId, datos) {
+    const cache = await caches.open('datos-v1').catch(() => null);
+    let numero = '';
+    if (cache) {
+      const g = await cache.match(`${location.origin}/api/remisiones/${remisionId}`);
+      if (g) { try { numero = (await g.json()).numero || ''; } catch (_) { /* sin número */ } }
+    }
+    try {
+      await window.SinConexion.encolar({ remisionId, numero, usuarioId: S.usuario.id, datos, recibida: new Date().toISOString() });
+    } catch (e) {
+      throw new Error('No hay conexión y no se pudo guardar la entrega en este equipo: ' + e.message);
+    }
+    actualizarBanner();
+    toast('Sin internet: la entrega quedó guardada en este equipo y se enviará sola al volver la conexión.', 'ok');
+    return { ok: true, encolada: true, numero };
+  }
+
+  /** Muestra como "entregada · sin enviar" lo que está en la cola, para que el repartidor lo vea reflejado. */
+  function superponerPendientes(ruta, datos) {
+    if (!window.SinConexion || !window.SinConexion.cantidad()) return datos;
+    const marcar = (r) => {
+      const p = r && window.SinConexion.de(r.id);
+      return p ? { ...r, estado: 'entregada', pendiente_sync: 1, entregada_en: p.recibida, receptor_nombre: p.datos.receptor_nombre, evidencias: r.evidencias ? [] : r.evidencias } : r;
+    };
+    const [base, qs = ''] = ruta.split('?');
+    if (base === '/api/remisiones' && Array.isArray(datos)) {
+      const soloPendientes = /(^|&)estado=pendiente(&|$)/.test(qs);
+      return soloPendientes ? datos.filter((r) => !window.SinConexion.de(r.id)) : datos.map(marcar);
+    }
+    if (/^\/api\/remisiones\/[^/]+$/.test(base) && datos && datos.id) return marcar(datos);
     return datos;
+  }
+
+  /** Envía al servidor las entregas guardadas sin conexión (en orden). */
+  async function vaciarCola() {
+    if (vaciando || !modoWeb() || !S.usuario || !S.token || !window.SinConexion) return;
+    const mias = window.SinConexion.items().filter((i) => i.usuarioId === S.usuario.id);
+    if (!mias.length || !navigator.onLine) { actualizarBanner(); return; }
+    vaciando = true;
+    let enviadas = 0;
+    try {
+      for (const it of mias) {
+        let r;
+        try {
+          r = await fetch(`/api/remisiones/${encodeURIComponent(it.remisionId)}/entrega`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.token }, body: JSON.stringify(it.datos),
+          });
+        } catch (_) { marcarSinConexion(true); break; }
+        let d = {};
+        try { d = await r.json(); } catch (_) { d = {}; }
+        if (r.status === 401) { toast('Su sesión expiró. Inicie sesión de nuevo para enviar las entregas guardadas.', 'error'); cerrarSesion(false); break; }
+        if (r.ok || (r.status === 400 && /ya está entregada/.test(d.error || ''))) { await window.SinConexion.quitar(it.id); enviadas++; continue; }
+        if (r.status >= 500) break; // se reintenta luego
+        await window.SinConexion.quitar(it.id);
+        toast(`La entrega ${it.numero || ''} no se pudo registrar: ${d.error || 'error ' + r.status}`, 'error');
+      }
+    } finally { vaciando = false; }
+    actualizarBanner();
+    if (enviadas) {
+      toast(`${enviadas} entrega${enviadas === 1 ? '' : 's'} enviada${enviadas === 1 ? '' : 's'} al servidor.`, 'ok');
+      precargar();
+      if (S.usuario) enrutar();
+    }
+  }
+
+  /** Con internet, deja guardado lo que el usuario necesitará si luego se queda sin señal. */
+  async function precargar() {
+    if (!modoWeb() || !S.usuario || !S.token || !navigator.onLine) return;
+    const h = { Authorization: 'Bearer ' + S.token };
+    const pedir = (u) => fetch(u, { headers: h }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const pendientes = await pedir('/api/remisiones?estado=pendiente');
+    await Promise.all(['/api/panel', '/api/remisiones', '/api/clientes', '/api/productos', '/api/contratos', '/api/info', '/api/ajustes-publicos', '/api/auth/yo'].map(pedir));
+    if (Array.isArray(pendientes)) for (const r of pendientes.slice(0, 60)) await pedir(`/api/remisiones/${encodeURIComponent(r.id)}`);
+  }
+
+  function iniciarModoSinConexion() {
+    if (!modoWeb()) return;
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    window.addEventListener('online', () => { marcarSinConexion(false); vaciarCola().then(precargar); });
+    window.addEventListener('offline', () => marcarSinConexion(true));
+    setInterval(() => { if (window.SinConexion.cantidad()) vaciarCola(); }, 20000);
+    setInterval(precargar, 5 * 60 * 1000);
+    actualizarBanner();
+    vaciarCola();
+    precargar();
+  }
+
+  function limpiarDatosOffline() {
+    try { if (window.caches) caches.delete('datos-v1'); } catch (_) { /* nada */ }
   }
 
   // ================================================================ notificaciones y diálogos
@@ -238,6 +358,7 @@
     const hacer = () => {
       S.token = null; S.usuario = null;
       guardar('rem_token', null);
+      if (preguntar) { guardar('rem_ultimo_uid', null); limpiarDatosOffline(); }
       if (S.syncTimer) { clearInterval(S.syncTimer); S.syncTimer = null; }
       location.hash = '#/login';
       enrutar();
@@ -291,7 +412,10 @@
   function iniciarSesion(r) {
     S.token = r.token; S.usuario = r.usuario;
     guardar('rem_token', r.token);
+    if (leer('rem_ultimo_uid') !== r.usuario.id) limpiarDatosOffline(); // otro usuario en el mismo equipo: no mostrar datos del anterior
+    guardar('rem_ultimo_uid', r.usuario.id);
     location.hash = '#/inicio';
+    if (modoWeb()) { vaciarCola(); precargar(); }
     iniciarSyncAutomatica();
     enrutar();
   }
@@ -786,8 +910,8 @@
       const btn = $('button[type=submit]', e.target);
       try {
         await conBoton(btn, async () => {
-          await api('POST', `/api/remisiones/${id}/entrega`, d);
-          await Escenas.celebrarEntrega(r.numero);
+          const res = await api('POST', `/api/remisiones/${id}/entrega`, d);
+          if (!(res && res.encolada)) await Escenas.celebrarEntrega(r.numero);
           sincronizarEnSegundoPlano();
           location.hash = `#/remisiones/${id}`;
         });
@@ -1291,6 +1415,7 @@
   // ================================================================ arranque
   async function iniciar() {
     Escenas.observar($('#raiz'));
+    if (window.SinConexion) await window.SinConexion.listo;
     try {
       [S.info, S.empresa] = await Promise.all([api('GET', '/api/info'), api('GET', '/api/ajustes-publicos')]);
     } catch (e) {
@@ -1301,6 +1426,7 @@
     if (S.token) {
       try { const r = await api('GET', '/api/auth/yo'); S.usuario = r.usuario; iniciarSyncAutomatica(); } catch (_) { S.token = null; guardar('rem_token', null); }
     }
+    iniciarModoSinConexion();
     window.addEventListener('hashchange', enrutar);
     enrutar();
   }

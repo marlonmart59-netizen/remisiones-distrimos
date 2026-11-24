@@ -5,5 +5,21 @@
   "display": "standalone",
   "background_color": "#f3f5f8",
   "theme_color": "#16324f",
-  "icons": [{ "src": "icono.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "icons": [
+    {
+      "src": "icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icono.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "id": "/",
+  "lang": "es",
+  "scope": "/",
+  "description": "Remisiones digitales con firma, foto, fecha y hora; funciona sin internet."
 }

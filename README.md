@@ -36,3 +36,16 @@ cd pruebas && npm install && npm run ui && npm run sync
 La llave de firma de la APK está en `app-movil/android/distrimos-release.jks` y su clave en
 `app-movil/android/key.properties`. **Guarde ambos archivos en un lugar seguro**: sin ellos no se pueden
 publicar actualizaciones que reemplacen la app instalada.
+
+## Versión en línea (Railway) y modo sin internet
+
+La misma interfaz web, publicada en Railway, se puede **instalar como aplicación** desde el navegador del celular
+(Chrome → menú → *Instalar aplicación* / *Agregar a pantalla de inicio*). Funciona así:
+
+- **Con internet:** trabaja directamente contra el servidor; no hace falta la APK.
+- **Sin internet:** abre igual (service worker `web/sw.js`), muestra las remisiones ya cargadas y permite **registrar entregas**
+  (firmas, foto, receptor). Quedan guardadas en el equipo (`web/js/sin-conexion.js`, IndexedDB) y un aviso lo indica.
+- **Al volver la conexión:** se envían solas al servidor (cada 20 s y al detectar la red) y se actualiza la lista.
+
+Requisitos: abrir la app una vez con internet y con el usuario del repartidor (así se guardan sus remisiones pendientes);
+solo se registran entregas sin conexión (crear o editar remisiones requiere internet). Funciona en direcciones `https://` y `localhost`.
