@@ -3,6 +3,8 @@
   "deploy": {
     "startCommand": "node servidor-pc/src/main.js",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5
+    "restartPolicyMaxRetries": 5,
+    "healthcheckPath": "/api/info",
+    "healthcheckTimeout": 60
   }
 }
