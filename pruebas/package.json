@@ -1,0 +1,10 @@
+{
+  "name": "pruebas-remisiones-distrimos",
+  "private": true,
+  "description": "Pruebas automáticas: interfaz (Playwright + Chrome) e integración PC <-> celular",
+  "scripts": {
+    "ui": "node prueba-ui.js http://localhost:3591",
+    "sync": "node prueba-sync.js"
+  },
+  "devDependencies": { "playwright-core": "1.49.1" }
+}

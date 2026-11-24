@@ -1,0 +1,9 @@
+{
+  "name": "Remisiones DISTRIMOS",
+  "short_name": "Remisiones",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f5f8",
+  "theme_color": "#16324f",
+  "icons": [{ "src": "icono.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

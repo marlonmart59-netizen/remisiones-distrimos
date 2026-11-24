@@ -1,0 +1,12 @@
+{
+  "name": "remisiones-distrimos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema de Remisiones DISTRIMOS - servidor web (Railway)",
+  "scripts": {
+    "start": "node servidor-pc/src/main.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

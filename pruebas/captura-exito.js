@@ -1,0 +1,22 @@
+const { chromium } = require('playwright-core');
+const path = require('path');
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+  const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  await p.goto('http://localhost:3591/#/login');
+  await p.fill('input[name=usuario]', 'repartidor2'); await p.fill('input[name=clave]', 'demo123'); await p.click('button[type=submit]');
+  await p.waitForSelector('.hero'); await p.waitForTimeout(1500);
+  await p.screenshot({ path: 'capturas/15-repartidor2-inicio.png' });
+  await p.click('a.btn.primario:has-text("Entregar")');
+  await p.waitForSelector('#lienzo');
+  const bx = await p.locator('#lienzo').boundingBox();
+  await p.mouse.move(bx.x + 30, bx.y + 100); await p.mouse.down();
+  for (let i = 0; i < 30; i++) await p.mouse.move(bx.x + 30 + i * 9, bx.y + 100 + Math.sin(i / 2) * 30);
+  await p.mouse.up();
+  await p.setInputFiles('#in-foto', path.join(__dirname, 'foto.png'));
+  await p.waitForSelector('#previa:not(.hidden)');
+  await p.click('button[type=submit]');
+  await p.waitForSelector('.exito'); await p.waitForTimeout(1300);
+  await p.screenshot({ path: 'capturas/16-entrega-exito.png' });
+  await b.close();
+})();

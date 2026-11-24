@@ -1,0 +1,13 @@
+node_modules/
+dist/
+**/build/
+datos/
+*.db
+*.db-shm
+*.db-wal
+app-movil/.dart_tool/
+app-movil/android/key.properties
+app-movil/android/*.jks
+app-movil/android/.gradle/
+pruebas/capturas/
+.env
